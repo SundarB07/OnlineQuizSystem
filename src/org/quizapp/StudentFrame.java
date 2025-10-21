@@ -1,53 +1,71 @@
 package org.quizapp;
 
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
-import java.awt.event.*;
+import java.sql.*;
 
 public class StudentFrame extends JFrame {
 
+    JTable table;
+    DefaultTableModel model;
+
     public StudentFrame() {
         setTitle("Student Dashboard");
-        setSize(500, 350);
+        setSize(600, 400);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
+        setLayout(new BorderLayout());
 
-        JPanel panel = new JPanel();
-        panel.setLayout(null);
-        panel.setBackground(new Color(245, 250, 255));
-
-        JLabel lblTitle = new JLabel("Welcome to the Quiz Portal", SwingConstants.CENTER);
+        JLabel lblTitle = new JLabel("Available Quizzes", SwingConstants.CENTER);
         lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 22));
-        lblTitle.setBounds(60, 40, 380, 30);
-        panel.add(lblTitle);
+        add(lblTitle, BorderLayout.NORTH);
 
-        JTextArea instructions = new JTextArea(
-            "Instructions:\n" +
-            "1. You will be given one question at a time.\n" +
-            "2. Select the correct answer and proceed.\n" +
-            "3. Timer will be active during the quiz.\n" +
-            "4. Your score will be shown at the end."
-        );
-        instructions.setBounds(70, 100, 350, 120);
-        instructions.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        instructions.setEditable(false);
-        instructions.setBackground(new Color(245, 250, 255));
-        instructions.setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY, 1, true));
-        panel.add(instructions);
+        // Table for quizzes
+        String[] columns = {"Quiz ID", "Title", "Duration (mins)"};
+        model = new DefaultTableModel(columns, 0);
+        table = new JTable(model);
+        add(new JScrollPane(table), BorderLayout.CENTER);
 
         JButton btnStart = new JButton("Start Quiz");
         btnStart.setFont(new Font("Segoe UI", Font.BOLD, 16));
         btnStart.setBackground(new Color(46, 140, 90));
         btnStart.setForeground(Color.WHITE);
-        btnStart.setBounds(180, 250, 130, 40);
-        btnStart.setFocusPainted(false);
-        btnStart.addActionListener(e -> {
-            dispose();
-            new QuizTaker();
-        });
-        panel.add(btnStart);
+        btnStart.addActionListener(e -> startSelectedQuiz());
+        add(btnStart, BorderLayout.SOUTH);
 
-        add(panel);
+        loadQuizzes();
+
         setVisible(true);
+    }
+
+    void loadQuizzes() {
+        try (Connection con = DBConnection.getConnection()) {
+            String sql = "SELECT quiz_id, title, duration FROM quiz";
+            Statement st = con.createStatement();
+            ResultSet rs = st.executeQuery(sql);
+
+            model.setRowCount(0);
+            while (rs.next()) {
+                model.addRow(new Object[]{
+                        rs.getInt("quiz_id"),
+                        rs.getString("title"),
+                        rs.getInt("duration")
+                });
+            }
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Error loading quizzes: " + e.getMessage());
+        }
+    }
+
+    void startSelectedQuiz() {
+        int row = table.getSelectedRow();
+        if (row == -1) {
+            JOptionPane.showMessageDialog(this, "Please select a quiz to start.");
+            return;
+        }
+        int quizId = (int) model.getValueAt(row, 0);
+        dispose();
+        new QuizTaker(quizId); // pass selected quiz
     }
 }

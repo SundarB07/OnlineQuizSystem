@@ -4,18 +4,39 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class QuizTaker extends JFrame {
+
     JLabel lblQuestion, lblTimer;
     JRadioButton[] options = new JRadioButton[4];
     JButton btnNext;
     ButtonGroup bg;
+
     int current = 0, score = 0, total = 0;
     Timer timer;
+    int timeLeft = 0; // in seconds
+    int quizId;
 
-    ResultSet rs;
+    List<Question> questions = new ArrayList<>();
 
-    public QuizTaker() {
+    class Question {
+        String questionText, optionA, optionB, optionC, optionD, correctOption;
+
+        Question(String q, String a, String b, String c, String d, String correct) {
+            questionText = q;
+            optionA = a;
+            optionB = b;
+            optionC = c;
+            optionD = d;
+            correctOption = correct;
+        }
+    }
+
+    public QuizTaker(int quizId) {
+        this.quizId = quizId;
+
         setTitle("Quiz in Progress");
         setSize(600, 400);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -24,7 +45,7 @@ public class QuizTaker extends JFrame {
         JPanel panel = new JPanel(null);
         panel.setBackground(new Color(250, 250, 255));
 
-        lblTimer = new JLabel("Time Left: 30s", SwingConstants.RIGHT);
+        lblTimer = new JLabel("Time Left: 0:00", SwingConstants.RIGHT);
         lblTimer.setFont(new Font("Segoe UI", Font.BOLD, 16));
         lblTimer.setBounds(400, 10, 180, 30);
         panel.add(lblTimer);
@@ -55,72 +76,112 @@ public class QuizTaker extends JFrame {
         panel.add(btnNext);
 
         add(panel);
-        loadQuestion();
+        loadQuestions(); // load questions for this quiz
         setVisible(true);
-
-        startTimer(30);
     }
 
-    void loadQuestion() {
+    void loadQuestions() {
         try (Connection con = DBConnection.getConnection()) {
-            Statement st = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
-            rs = st.executeQuery("SELECT * FROM quiz");
-            rs.last();
-            total = rs.getRow();
-            rs.first();
+            String sql = "SELECT * FROM questions WHERE quiz_id=?";
+            PreparedStatement ps = con.prepareStatement(sql);
+            ps.setInt(1, quizId);
+            ResultSet rs = ps.executeQuery();
+
+            questions.clear();
+            total = 0;
+            int quizDuration = 0;
+
+            // get duration from quiz table
+            Statement st = con.createStatement();
+            ResultSet rsQuiz = st.executeQuery("SELECT duration FROM quiz WHERE quiz_id=" + quizId);
+            if (rsQuiz.next()) quizDuration = rsQuiz.getInt("duration");
+
+            while (rs.next()) {
+                questions.add(new Question(
+                        rs.getString("question_text"),
+                        rs.getString("optionA"),
+                        rs.getString("optionB"),
+                        rs.getString("optionC"),
+                        rs.getString("optionD"),
+                        rs.getString("correct_option")
+                ));
+            }
+            total = questions.size();
+            if (total == 0) {
+                JOptionPane.showMessageDialog(this, "No questions found for this quiz!");
+                dispose();
+                new StudentFrame();
+                return;
+            }
+
+            timeLeft = quizDuration * 60; // convert minutes to seconds
             showQuestion();
+            startTimer();
         } catch (Exception e) {
+            e.printStackTrace();
             JOptionPane.showMessageDialog(this, "Error loading quiz: " + e.getMessage());
         }
     }
 
     void showQuestion() {
-        try {
-            lblQuestion.setText("Q" + (current + 1) + ": " + rs.getString("question_text"));
-            options[0].setText(rs.getString("optionA"));
-            options[1].setText(rs.getString("optionB"));
-            options[2].setText(rs.getString("optionC"));
-            options[3].setText(rs.getString("optionD"));
-            bg.clearSelection();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        if (current >= total) return;
+        Question q = questions.get(current);
+        lblQuestion.setText("Q" + (current + 1) + ": " + q.questionText);
+        options[0].setText(q.optionA);
+        options[1].setText(q.optionB);
+        options[2].setText(q.optionC);
+        options[3].setText(q.optionD);
+        bg.clearSelection();
     }
-
 
     void nextQuestion() {
-        try {
-            String ans = "";
-            for (JRadioButton rb : options)
-                if (rb.isSelected()) ans = rb.getText();
-            if (ans.equals(rs.getString("answer"))) score++;
+        Question q = questions.get(current);
+        String ans = "";
+        for (JRadioButton rb : options)
+            if (rb.isSelected()) ans = rb.getText();
+        if (ans.equals(q.correctOption)) score++;
 
-            if (!rs.next()) {
-                timer.stop();
-                JOptionPane.showMessageDialog(this, "Quiz Completed!\nYour Score: " + score + "/" + total);
-                dispose();
-                new StudentFrame();
-            } else {
-                current++;
-                showQuestion();
-                startTimer(30);
+        current++;
+        if (current >= total) {
+            timer.stop();
+            JOptionPane.showMessageDialog(this, "Quiz Completed!\nYour Score: " + score + "/" + total);
+
+            // save result to DB
+            try (Connection con = DBConnection.getConnection()) {
+                String sql = "INSERT INTO results(student_id, quiz_id, score) VALUES(?, ?, ?)";
+                PreparedStatement ps = con.prepareStatement(sql);
+                ps.setInt(1, 1); // TODO: replace with logged-in student_id
+                ps.setInt(2, quizId);
+                ps.setInt(3, score);
+                ps.executeUpdate();
+            } catch (Exception ex) {
+                ex.printStackTrace();
             }
-        } catch (Exception e) {
-            e.printStackTrace();
+
+            dispose();
+            new StudentFrame();
+        } else {
+            showQuestion();
         }
     }
 
-    void startTimer(int seconds) {
+    void startTimer() {
         if (timer != null) timer.stop();
-        final int[] timeLeft = {seconds};
-        lblTimer.setText("Time Left: " + timeLeft[0] + "s");
-        timer = new Timer(1000, e -> {
-            timeLeft[0]--;
-            lblTimer.setText("Time Left: " + timeLeft[0] + "s");
-            if (timeLeft[0] <= 0) {
-                timer.stop();
-                JOptionPane.showMessageDialog(this, "Time's up for this question!");
-                nextQuestion();
+        timer = new Timer(1000, new ActionListener() {
+            int remaining = timeLeft;
+
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                int mins = remaining / 60;
+                int secs = remaining % 60;
+                lblTimer.setText(String.format("Time Left: %d:%02d", mins, secs));
+                remaining--;
+                if (remaining < 0) {
+                    timer.stop();
+                    JOptionPane.showMessageDialog(null, "Time's up!");
+                    dispose();
+                    new StudentFrame();
+                }
             }
         });
         timer.start();

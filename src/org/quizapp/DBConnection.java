@@ -8,9 +8,9 @@ public class DBConnection {
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
             conn = DriverManager.getConnection(
-                "jdbc:mysql://localhost:3306/quizdb", // your DB name
-                "root",                               // your MySQL username
-                "13579"                               // your MySQL password
+                "jdbc:mysql://localhost:3306/quizdb",
+                "root",
+                "13579"
             );
             System.out.println("Database Connected!");
         } catch (Exception e) {
