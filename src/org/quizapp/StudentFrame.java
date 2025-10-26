@@ -6,66 +6,108 @@ import java.awt.*;
 import java.sql.*;
 
 public class StudentFrame extends JFrame {
-
-    JTable table;
-    DefaultTableModel model;
+    JTable table; 
+    int studentId;
 
     public StudentFrame() {
-        setTitle("Student Dashboard");
-        setSize(600, 400);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLocationRelativeTo(null);
+        this(1); // temporary default until login connection done
+    }
+
+    public StudentFrame(int studentId) {
+        this.studentId = studentId;
+
+        setTitle("Student Portal");
+        setSize(800, 600);
         setLayout(new BorderLayout());
+        setLocationRelativeTo(null);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
+        // ====== Top Panel with Logout ======
+        JPanel topPanel = new JPanel(new BorderLayout());
         JLabel lblTitle = new JLabel("Available Quizzes", SwingConstants.CENTER);
-        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 22));
-        add(lblTitle, BorderLayout.NORTH);
+        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 20));
 
-        // Table for quizzes
-        String[] columns = {"Quiz ID", "Title", "Duration (mins)"};
-        model = new DefaultTableModel(columns, 0);
-        table = new JTable(model);
-        add(new JScrollPane(table), BorderLayout.CENTER);
+        JButton btnLogout = new JButton("Logout");
+        btnLogout.setBackground(new Color(220, 53, 69)); // soft red
+        btnLogout.setForeground(Color.WHITE);
+        btnLogout.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btnLogout.setFocusPainted(false);
+        btnLogout.setBorderPainted(false);
+        btnLogout.setContentAreaFilled(true);
+        btnLogout.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnLogout.addActionListener(e -> {
+            dispose();
+            new RoleSelectionFrame();
+        });
 
+
+        topPanel.add(lblTitle, BorderLayout.CENTER);
+        topPanel.add(btnLogout, BorderLayout.EAST);
+        add(topPanel, BorderLayout.NORTH);
+
+        // ====== Table ======
+     // Table setup (non-editable)
+        DefaultTableModel model = new DefaultTableModel(new String[]{"Quiz ID", "Quiz Name", "Duration (min)"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false; // make table non-editable
+            }
+        };
+
+        JTable table = new JTable(model);
+        table.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        table.setRowHeight(25);
+        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 14));
+        table.getTableHeader().setBackground(new Color(100, 149, 237));
+        table.getTableHeader().setForeground(Color.WHITE);
+        table.setSelectionBackground(new Color(173, 216, 230));
+        table.setSelectionForeground(Color.BLACK);
+
+        // Adjust column widths
+        table.getColumnModel().getColumn(0).setPreferredWidth(60);  // Quiz ID small
+        table.getColumnModel().getColumn(1).setPreferredWidth(250); // Quiz Name wide
+        table.getColumnModel().getColumn(2).setPreferredWidth(80);  // Duration small
+
+        JScrollPane scrollPane = new JScrollPane(table);
+        scrollPane.setBounds(50, 80, 600, 300);
+        add(scrollPane);
+
+        // ====== Start Quiz Button ======
         JButton btnStart = new JButton("Start Quiz");
-        btnStart.setFont(new Font("Segoe UI", Font.BOLD, 16));
-        btnStart.setBackground(new Color(46, 140, 90));
+        btnStart.setBackground(new Color(72, 132, 255));
         btnStart.setForeground(Color.WHITE);
-        btnStart.addActionListener(e -> startSelectedQuiz());
+        btnStart.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        btnStart.addActionListener(e -> {
+            int selectedRow = table.getSelectedRow();
+            if (selectedRow == -1) {
+                JOptionPane.showMessageDialog(this, "Please select a quiz to start!");
+                return;
+            }
+
+            int quizId = (int) table.getValueAt(selectedRow, 0);
+            dispose();
+            new QuizTaker(quizId);
+        });
+
         add(btnStart, BorderLayout.SOUTH);
-
-        loadQuizzes();
-
+        loadQuizzes(model);
         setVisible(true);
     }
 
-    void loadQuizzes() {
+    void loadQuizzes(DefaultTableModel model) {
         try (Connection con = DBConnection.getConnection()) {
             String sql = "SELECT quiz_id, title, duration FROM quiz";
-            Statement st = con.createStatement();
-            ResultSet rs = st.executeQuery(sql);
+            PreparedStatement ps = con.prepareStatement(sql);
+            ResultSet rs = ps.executeQuery();
 
-            model.setRowCount(0);
             while (rs.next()) {
-                model.addRow(new Object[]{
-                        rs.getInt("quiz_id"),
-                        rs.getString("title"),
-                        rs.getInt("duration")
-                });
+                int id = rs.getInt("quiz_id");
+                String title = rs.getString("title");
+                int duration = rs.getInt("duration");
+                model.addRow(new Object[]{id, title, duration});
             }
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error loading quizzes: " + e.getMessage());
         }
-    }
-
-    void startSelectedQuiz() {
-        int row = table.getSelectedRow();
-        if (row == -1) {
-            JOptionPane.showMessageDialog(this, "Please select a quiz to start.");
-            return;
-        }
-        int quizId = (int) model.getValueAt(row, 0);
-        dispose();
-        new QuizTaker(quizId); // pass selected quiz
     }
 }
