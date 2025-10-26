@@ -137,9 +137,13 @@ public class QuizTaker extends JFrame {
     void nextQuestion() {
         Question q = questions.get(current);
         String ans = "";
-        for (JRadioButton rb : options)
-            if (rb.isSelected()) ans = rb.getText();
-        if (ans.equals(q.correctOption)) score++;
+        if (options[0].isSelected()) ans = "A";
+        else if (options[1].isSelected()) ans = "B";
+        else if (options[2].isSelected()) ans = "C";
+        else if (options[3].isSelected()) ans = "D";
+
+        if (ans.equalsIgnoreCase(q.correctOption)) score++;
+
 
         current++;
         if (current >= total) {

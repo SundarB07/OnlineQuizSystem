@@ -22,22 +22,45 @@ public class TeacherFrame extends JFrame {
         btnCreateQuiz.setBounds(50, 70, 200, 40);
         btnCreateQuiz.setBackground(new Color(72, 132, 255));
         btnCreateQuiz.setForeground(Color.WHITE);
-        btnCreateQuiz.addActionListener(e -> {
-            dispose();
-            new QuizCreationPanel(teacherId, true); // true: follow-up with question input
-        });
+        btnCreateQuiz.addActionListener(e -> openCreateQuizPanel());
         add(btnCreateQuiz);
 
         JButton btnViewQuiz = new JButton("View Existing Quizzes");
         btnViewQuiz.setBounds(300, 70, 220, 40);
         btnViewQuiz.setBackground(new Color(46, 140, 90));
         btnViewQuiz.setForeground(Color.WHITE);
-        btnViewQuiz.addActionListener(e -> {
-            dispose();
-            new ExistingQuizPanel(teacherId);
-        });
+        btnViewQuiz.addActionListener(e -> showExistingQuizzes());
         add(btnViewQuiz);
 
+     // Logout Button
+        JButton btnLogout = new JButton("Logout");
+        btnLogout.setBounds(650, 20, 100, 35); // position on top-right corner
+        btnLogout.setBackground(new Color(220, 53, 69)); // red
+        btnLogout.setForeground(Color.WHITE);
+        btnLogout.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btnLogout.setFocusPainted(false);
+        btnLogout.setBorderPainted(false);
+        btnLogout.setContentAreaFilled(true);
+        btnLogout.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        btnLogout.addActionListener(e -> {
+            dispose();
+            new RoleSelectionFrame();
+        });
+
+        add(btnLogout); // make sure it's added to the frame
+
+
         setVisible(true);
+    }
+
+    void openCreateQuizPanel() {
+        dispose();
+        new QuizCreationPanel(teacherId, true); // true to follow QuestionInputPanel
+    }
+
+    void showExistingQuizzes() {
+        dispose();
+        new ExistingQuizPanel(teacherId);
     }
 }
