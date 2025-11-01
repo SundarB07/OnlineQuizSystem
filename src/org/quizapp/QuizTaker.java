@@ -10,11 +10,11 @@ import java.util.List;
 public class QuizTaker extends JFrame {
 
     JLabel lblQuestion, lblTimer;
-    JRadioButton[] options = new JRadioButton[4];
+    JCheckBox[] options = new JCheckBox[4];
     JButton btnNext;
     ButtonGroup bg;
 
-    int current = 0, score = 0, total = 0;
+    int current = 0, score = 0, totalQuestions = 0, totalMarks = 0;
     Timer timer;
     int timeLeft = 0; // in seconds
     int quizId;
@@ -22,15 +22,20 @@ public class QuizTaker extends JFrame {
     List<Question> questions = new ArrayList<>();
 
     class Question {
-        String questionText, optionA, optionB, optionC, optionD, correctOption;
-
-        Question(String q, String a, String b, String c, String d, String correct) {
+        int qId;
+        private int marks;
+        public int getMarks() {return marks;}
+        String questionText, optionA, optionB, optionC, optionD, correctOption; // correctOption can be null for multi-answer
+        // constructor updated
+        Question(int id, int m, String q, String a, String b, String c, String d, String correct) {
+            qId = id;
+            marks = m;
             questionText = q;
             optionA = a;
             optionB = b;
             optionC = c;
             optionD = d;
-            correctOption = correct;
+            correctOption = correct; // single-answer -> "A"/"B"/... ; multi-answer -> null
         }
     }
 
@@ -54,15 +59,19 @@ public class QuizTaker extends JFrame {
         lblQuestion.setFont(new Font("Segoe UI", Font.BOLD, 16));
         lblQuestion.setBounds(50, 60, 500, 40);
         panel.add(lblQuestion);
+        
+        JLabel lblSection = new JLabel();
+        lblSection.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        lblSection.setBounds(50, 30, 300, 25);
+        add(lblSection);
 
         bg = new ButtonGroup();
         int y = 120;
         for (int i = 0; i < 4; i++) {
-            options[i] = new JRadioButton();
+            options[i] = new JCheckBox();
             options[i].setBounds(70, y, 400, 25);
             options[i].setFont(new Font("Segoe UI", Font.PLAIN, 14));
             options[i].setBackground(panel.getBackground());
-            bg.add(options[i]);
             panel.add(options[i]);
             y += 35;
         }
@@ -82,13 +91,16 @@ public class QuizTaker extends JFrame {
 
     void loadQuestions() {
         try (Connection con = DBConnection.getConnection()) {
-            String sql = "SELECT * FROM questions WHERE quiz_id=?";
+        	String sql = "SELECT q.*, s.section_name, s.marks_per_question AS marks " +
+                    "FROM questions q " +
+                    "LEFT JOIN quiz_sections s ON q.section_id = s.section_id " +
+                    "WHERE q.quiz_id = ?";
             PreparedStatement ps = con.prepareStatement(sql);
             ps.setInt(1, quizId);
             ResultSet rs = ps.executeQuery();
 
             questions.clear();
-            total = 0;
+//            total = 0;
             int quizDuration = 0;
 
             // get duration from quiz table
@@ -97,17 +109,25 @@ public class QuizTaker extends JFrame {
             if (rsQuiz.next()) quizDuration = rsQuiz.getInt("duration");
 
             while (rs.next()) {
+                int qid = rs.getInt("q_id"); // note: your questions table used q_id as primary key
                 questions.add(new Question(
+                        qid,
+                        rs.getInt("marks"),
                         rs.getString("question_text"),
                         rs.getString("optionA"),
                         rs.getString("optionB"),
                         rs.getString("optionC"),
                         rs.getString("optionD"),
-                        rs.getString("correct_option")
+                        rs.getString("correct_option") // may be null for multi-answer
                 ));
             }
-            total = questions.size();
-            if (total == 0) {
+            totalQuestions = questions.size();
+//            totalMarks = 0;
+//            for (Question q : questions) {
+//                totalMarks += q.getMarks();
+//            }
+
+            if (totalQuestions == 0) {
                 JOptionPane.showMessageDialog(this, "No questions found for this quiz!");
                 dispose();
                 new StudentFrame();
@@ -123,38 +143,86 @@ public class QuizTaker extends JFrame {
         }
     }
 
+
     void showQuestion() {
-        if (current >= total) return;
+        if (current >= totalQuestions) return;
         Question q = questions.get(current);
+        
         lblQuestion.setText("Q" + (current + 1) + ": " + q.questionText);
         options[0].setText(q.optionA);
         options[1].setText(q.optionB);
         options[2].setText(q.optionC);
         options[3].setText(q.optionD);
-        bg.clearSelection();
+        // clear selections
+        for (int i = 0; i < 4; i++) options[i].setSelected(false);
     }
 
     void nextQuestion() {
         Question q = questions.get(current);
-        String ans = "";
-        if (options[0].isSelected()) ans = "A";
-        else if (options[1].isSelected()) ans = "B";
-        else if (options[2].isSelected()) ans = "C";
-        else if (options[3].isSelected()) ans = "D";
 
-        if (ans.equalsIgnoreCase(q.correctOption)) score++;
+        // get user’s selected options
+        java.util.Set<String> userSelected = new java.util.HashSet<>();
+        if (options[0].isSelected()) userSelected.add("A");
+        if (options[1].isSelected()) userSelected.add("B");
+        if (options[2].isSelected()) userSelected.add("C");
+        if (options[3].isSelected()) userSelected.add("D");
 
+        try (Connection con = DBConnection.getConnection()) {
+            //  fetch marks_per_question from quiz_sections
+            int marksPerQ = 1;
+            PreparedStatement psMarks = con.prepareStatement(
+                "SELECT s.marks_per_question FROM quiz_sections s JOIN questions q ON s.section_id = q.section_id WHERE q.q_id = ?"
+            );
+            psMarks.setInt(1, q.qId);
+            ResultSet rsMarks = psMarks.executeQuery();
+            if (rsMarks.next()) marksPerQ = rsMarks.getInt("marks_per_question");
+
+            if (q.correctOption != null && !q.correctOption.trim().isEmpty()) {
+                // single answer
+                if (userSelected.size() == 1 && userSelected.contains(q.correctOption.toUpperCase())) {
+                    score += marksPerQ; // add weighted marks
+                }
+            } else {
+                // multi-answer
+                String sql = "SELECT correct_option FROM question_answers WHERE q_id=?";
+                PreparedStatement ps = con.prepareStatement(sql);
+                ps.setInt(1, q.qId);
+                ResultSet rs = ps.executeQuery();
+
+                java.util.Set<String> correctSet = new java.util.HashSet<>();
+                while (rs.next()) {
+                    correctSet.add(rs.getString("correct_option").toUpperCase());
+                }
+
+                if (userSelected.equals(correctSet)) {
+                    score += marksPerQ; // add weighted marks
+                }
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
 
         current++;
-        if (current >= total) {
-            timer.stop();
-            JOptionPane.showMessageDialog(this, "Quiz Completed!\nYour Score: " + score + "/" + total);
+        if (current >= totalQuestions) {
+            if (timer != null) timer.stop();
+            int totalMarks = 0;
+            try (Connection con = DBConnection.getConnection()) {
+                PreparedStatement ps = con.prepareStatement(
+                    "SELECT SUM(s.marks_per_question) AS total FROM quiz_sections s " +
+                    "JOIN questions q ON s.section_id = q.section_id WHERE q.quiz_id = ?"
+                );
+                ps.setInt(1, quizId);
+                ResultSet rs = ps.executeQuery();
+                if (rs.next()) totalMarks = rs.getInt("total");
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+            JOptionPane.showMessageDialog(this, "Quiz Completed!\nYour Score is " + score + "/" + totalMarks);
 
-            // save result to DB
             try (Connection con = DBConnection.getConnection()) {
                 String sql = "INSERT INTO results(student_id, quiz_id, score) VALUES(?, ?, ?)";
                 PreparedStatement ps = con.prepareStatement(sql);
-                ps.setInt(1, 1); // TODO: replace with logged-in student_id
+                ps.setInt(1, 1); // TODO: replace with logged-in student ID
                 ps.setInt(2, quizId);
                 ps.setInt(3, score);
                 ps.executeUpdate();
@@ -168,6 +236,8 @@ public class QuizTaker extends JFrame {
             showQuestion();
         }
     }
+
+
 
     void startTimer() {
         if (timer != null) timer.stop();

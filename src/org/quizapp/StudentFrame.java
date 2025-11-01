@@ -85,8 +85,32 @@ public class StudentFrame extends JFrame {
             }
 
             int quizId = (int) table.getValueAt(selectedRow, 0);
-            dispose();
-            new QuizTaker(quizId);
+            try (Connection con = DBConnection.getConnection()) {
+                String secSql = "SELECT section_name, marks_per_question FROM quiz_sections WHERE quiz_id = ?";
+                PreparedStatement ps = con.prepareStatement(secSql);
+                ps.setInt(1, quizId);
+                ResultSet rs = ps.executeQuery();
+
+                StringBuilder info = new StringBuilder("📘 Quiz Instructions:\n\n");
+                info.append("This quiz contains multiple sections.\n\n");
+
+                while (rs.next()) {
+                    info.append("• ")
+                        .append(rs.getString("section_name"))
+                        .append(" – ")
+                        .append(rs.getInt("marks_per_question"))
+                        .append(" mark(s) per question\n");
+                }
+
+                info.append("\nClick OK to start the quiz.");
+                JOptionPane.showMessageDialog(this, info.toString(), "Quiz Instructions", JOptionPane.INFORMATION_MESSAGE);
+
+                dispose();
+                new QuizTaker(quizId);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Error loading quiz info: " + ex.getMessage());
+            }
+
         });
 
         add(btnStart, BorderLayout.SOUTH);
